@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Markdown to HTML Converter</title>
+  
+  <!-- CDN Dependencies with SRI Integrity Hashes -->
+  <script   src="https://unpkg.com/marked@12.0.0/marked.min.js" integrity="sha384-NNQgBjjuhtXzPmmy4gurS5X7P4uTt1DThyevz4Ua0IVK5+kazYQI1W27JHjbbxQz"   crossorigin="anonymous"></script>
+<script src="https://unpkg.com/dompurify@3.0.9/dist/purify.min.js" integrity="sha384-3HPB1XT51W3gGRxAmZ+qbZwRpRlFQL632y8x+adAqCr4Wp3TaWwCLSTAJJKbyWEK" crossorigin="anonymous"></script>
+<!--   <script src="https://unpkg.com/marked@12.0.0/marked.min.js" integrity="sha384-PV1tufVHxK1hB/c9yelECTc5q7fW0bcNvD9+lSmq4dLkDwsppYtE8EdZGzqng+gc" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/dompurify@3.0.9/dist/purify.min.js" integrity="sha384-TK8u+0EKUVyN3tsKY3vxWsx3HwstH+4p5X21eiOvwXBG+qX2N6XO56ZN2KeZo4Z" crossorigin="anonymous"></script> -->
+
+  <style>
+    :root {
+      --bg-main: #ffffff;
+      --bg-panel: #f8fafc;
+      --bg-toolbar: #f1f5f9;
+      --bg-editor: #ffffff;
+      --bg-gutter: #f8fafc;
+      --bg-preview: #ffffff;
+      --bg-hover: #e2e8f0;
+      --bg-active: #cbd5e1;
+      --bg-code: #f1f5f9;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --text-gutter: #94a3b8;
+      --border-color: #e2e8f0;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --accent-text: #ffffff;
+      --table-border: #cbd5e1;
+      --blockquote-border: #3b82f6;
+      --toast-bg: #1e293b;
+      --toast-text: #ffffff;
+      --focus-ring: #2563eb;
+      --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    [data-theme="dark"] {
+      --bg-main: #0f172a;
+      --bg-panel: #1e293b;
+      --bg-toolbar: #1e293b;
+      --bg-editor: #0f172a;
+      --bg-gutter: #182234;
+      --bg-preview: #0f172a;
+      --bg-hover: #334155;
+      --bg-active: #475569;
+      --bg-code: #1e293b;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-gutter: #475569;
+      --border-color: #334155;
+      --accent: #3b82f6;
+      --accent-hover: #60a5fa;
+      --accent-text: #ffffff;
+      --table-border: #334155;
+      --blockquote-border: #60a5fa;
+      --toast-bg: #f8fafc;
+      --toast-text: #0f172a;
+      --focus-ring: #60a5fa;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      font-family: var(--font-ui);
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      transition: background-color 0.15s ease, color 0.15s ease;
+    }
+
+    /* Focus management: visible focus ring for keyboard users only */
+    *:focus-visible {
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 2px;
+    }
+
+    /* Skip link for keyboard/screen reader users */
+    .skip-link {
+      position: absolute;
+      top: -100%;
+      left: 0;
+      z-index: 1000;
+      padding: 0.5rem 1rem;
+      background: var(--accent);
+      color: var(--accent-text);
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.875rem;
+      border-radius: 0 0 4px 0;
+    }
+
+    .skip-link:focus {
+      top: 0;
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 2px;
+    }
+
+    .app-root {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* Header & Toolbar */
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: var(--bg-toolbar);
+      border-bottom: 1px solid var(--border-color);
+      user-select: none;
+      z-index: 10;
+    }
+
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+    }
+
+    .toolbar-title {
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: var(--text-main);
+      margin-right: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .toolbar-divider {
+      width: 1px;
+      height: 1.25rem;
+      background: var(--border-color);
+      margin: 0 0.25rem;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.35rem 0.65rem;
+      font-size: 0.825rem;
+      font-weight: 500;
+      border-radius: 4px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-main);
+      color: var(--text-main);
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .btn:hover {
+      background: var(--bg-hover);
+    }
+
+    .btn:active {
+      background: var(--bg-active);
+    }
+
+    .btn.active {
+      background: var(--accent);
+      color: var(--accent-text);
+      border-color: var(--accent);
+    }
+
+    .btn-icon {
+      font-size: 0.9rem;
+      line-height: 1;
+    }
+
+    /* Workspace */
+    .workspace {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* View modes */
+    .workspace.view-editor .preview-pane { display: none !important; }
+    .workspace.view-editor .editor-pane { width: 100% !important; flex: 1 1 100% !important; }
+
+    .workspace.view-preview .editor-pane { display: none !important; }
+    .workspace.view-preview .preview-pane { width: 100% !important; flex: 1 1 100% !important; }
+
+    .workspace.view-split .editor-pane { width: 50%; }
+    .workspace.view-split .preview-pane { width: 50%; }
+
+    /* Editor Pane */
+    .editor-pane {
+      display: flex;
+      flex: 1;
+      height: 100%;
+      background: var(--bg-editor);
+      border-right: 1px solid var(--border-color);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .line-gutter {
+      width: 3.5rem;
+      background: var(--bg-gutter);
+      color: var(--text-gutter);
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      line-height: 1.5rem;
+      padding: 0.75rem 0.5rem;
+      text-align: right;
+      user-select: none;
+      overflow: hidden;
+      border-right: 1px solid var(--border-color);
+    }
+
+    .editor-textarea {
+      flex: 1;
+      height: 100%;
+      background: transparent;
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      line-height: 1.5rem;
+      padding: 0.75rem 1rem;
+      border: none;
+      outline: none;
+      resize: none;
+      white-space: pre;
+      overflow-wrap: normal;
+      overflow-x: auto;
+      overflow-y: auto;
+      tab-size: 2;
+    }
+
+    /* Restore focus ring on textarea since we removed outline above */
+    .editor-textarea:focus-visible {
+      outline: 2px solid var(--focus-ring);
+      outline-offset: -2px;
+    }
+
+    /* Preview Pane */
+    .preview-pane {
+      flex: 1;
+      height: 100%;
+      background: var(--bg-preview);
+      padding: 1.5rem 2rem;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    /* Markdown Body Styling */
+    .markdown-body {
+      font-family: var(--font-ui);
+      font-size: 1rem;
+      line-height: 1.65;
+      color: var(--text-main);
+      max-width: 860px;
+      margin: 0 auto;
+      word-wrap: break-word;
+    }
+
+    .markdown-body h1,
+    .markdown-body h2,
+    .markdown-body h3,
+    .markdown-body h4,
+    .markdown-body h5,
+    .markdown-body h6 {
+      margin-top: 1.5rem;
+      margin-bottom: 0.75rem;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    .markdown-body h1 { font-size: 1.85rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--border-color); }
+    .markdown-body h2 { font-size: 1.5rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--border-color); }
+    .markdown-body h3 { font-size: 1.25rem; }
+    .markdown-body h4 { font-size: 1.1rem; }
+    .markdown-body h5 { font-size: 1rem; }
+    .markdown-body h6 { font-size: 0.875rem; color: var(--text-muted); }
+
+    .markdown-body p,
+    .markdown-body ul,
+    .markdown-body ol,
+    .markdown-body dl,
+    .markdown-body table,
+    .markdown-body pre,
+    .markdown-body blockquote {
+      margin-top: 0;
+      margin-bottom: 1rem;
+    }
+
+    .markdown-body hr {
+      height: 2px;
+      padding: 0;
+      margin: 1.5rem 0;
+      background-color: var(--border-color);
+      border: 0;
+    }
+
+    .markdown-body a {
+      color: var(--accent);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    .markdown-body a:hover {
+      opacity: 0.85;
+    }
+
+    .markdown-body code {
+      font-family: var(--font-mono);
+      font-size: 85%;
+      background: var(--bg-code);
+      padding: 0.2em 0.4em;
+      border-radius: 4px;
+    }
+
+    .markdown-body pre {
+      background: var(--bg-code);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      border: 1px solid var(--border-color);
+    }
+
+    .markdown-body pre code {
+      background: transparent;
+      padding: 0;
+      font-size: 0.875rem;
+      border-radius: 0;
+    }
+
+    .markdown-body blockquote {
+      padding: 0.5rem 1rem;
+      color: var(--text-muted);
+      border-left: 0.25rem solid var(--blockquote-border);
+      background: var(--bg-toolbar);
+      border-radius: 0 4px 4px 0;
+    }
+
+    .markdown-body table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      overflow: hidden;
+    }
+
+    .markdown-body table th,
+    .markdown-body table td {
+      padding: 0.5rem 0.75rem;
+      border: 1px solid var(--table-border);
+    }
+
+    .markdown-body table th {
+      font-weight: 600;
+      background: var(--bg-toolbar);
+    }
+
+    .markdown-body table tr:nth-child(2n) {
+      background: var(--bg-panel);
+    }
+
+    .markdown-body img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 4px;
+    }
+
+    .markdown-body ul,
+    .markdown-body ol {
+      padding-left: 2rem;
+    }
+
+    .markdown-body li {
+      margin-top: 0.25rem;
+    }
+
+    .markdown-body input[type="checkbox"] {
+      margin-right: 0.4rem;
+      vertical-align: middle;
+    }
+
+    /* Status Bar */
+    .status-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.35rem 1rem;
+      background: var(--bg-toolbar);
+      border-top: 1px solid var(--border-color);
+      font-size: 0.775rem;
+      color: var(--text-muted);
+      user-select: none;
+    }
+
+    .status-item {
+      margin-right: 1rem;
+    }
+
+    /* Drag & Drop Overlay */
+    .drop-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(37, 99, 235, 0.15);
+      border: 3px dashed var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--accent);
+      z-index: 100;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .drop-overlay.active {
+      opacity: 1;
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      bottom: 2.5rem;
+      right: 1.5rem;
+      background: var(--toast-bg);
+      color: var(--toast-text);
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      font-size: 0.825rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      pointer-events: none;
+      z-index: 1000;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Mobile Responsive: < 768px */
+    @media (max-width: 767px) {
+      .toolbar {
+        padding: 0.35rem 0.5rem;
+        gap: 0.25rem;
+      }
+
+      .toolbar-title {
+        font-size: 0.8rem;
+        margin-right: 0.25rem;
+      }
+
+      .btn {
+        padding: 0.3rem 0.45rem;
+        font-size: 0.75rem;
+      }
+
+      .toolbar-divider {
+        display: none;
+      }
+
+      /* Force stacked layout on mobile: default to editor-only */
+      .workspace.view-split {
+        flex-direction: column;
+      }
+
+      .workspace.view-split .editor-pane {
+        width: 100% !important;
+        height: 50% !important;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+      }
+
+      .workspace.view-split .preview-pane {
+        width: 100% !important;
+        height: 50% !important;
+      }
+
+      .line-gutter {
+        width: 2.5rem;
+        font-size: 0.75rem;
+        padding: 0.5rem 0.25rem;
+      }
+
+      .editor-textarea {
+        font-size: 0.8rem;
+        padding: 0.5rem;
+      }
+
+      .preview-pane {
+        padding: 1rem;
+      }
+
+      .markdown-body {
+        font-size: 0.9rem;
+      }
+
+      .status-bar {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.7rem;
+      }
+
+      .status-item {
+        margin-right: 0.5rem;
+      }
+
+      .toast {
+        right: 0.5rem;
+        bottom: 2rem;
+        font-size: 0.75rem;
+      }
+    }
+
+    /* Tablet: 768px - 1024px */
+    @media (min-width: 768px) and (max-width: 1024px) {
+      .toolbar {
+        padding: 0.4rem 0.75rem;
+      }
+
+      .preview-pane {
+        padding: 1rem 1.25rem;
+      }
+    }
+
+    /* Print Styling */
+    @media print {
+      .toolbar, .status-bar, .editor-pane, .no-print, .toast, .drop-overlay, .skip-link {
+        display: none !important;
+      }
+      body, .app-root, .workspace, .preview-pane {
+        display: block !important;
+        width: 100% !important;
+        height: auto !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+        color: #000000 !important;
+        overflow: visible !important;
+      }
+      .preview-pane {
+        padding: 0 !important;
+      }
+      .markdown-body {
+        max-width: 100% !important;
+        color: #000000 !important;
+      }
+      .markdown-body a {
+        color: #000000 !important;
+        text-decoration: underline !important;
+      }
+      .markdown-body a[href]::after {
+        content: " (" attr(href) ")";
+        font-size: 0.8em;
+        color: #555;
+      }
+      .markdown-body pre, .markdown-body code {
+        background: #f5f5f5 !important;
+        border: 1px solid #ccc !important;
+      }
+      .markdown-body blockquote {
+        border-left-color: #999 !important;
+        color: #333 !important;
+      }
+      .markdown-body table th, .markdown-body table td {
+        border-color: #999 !important;
+      }
+    }
+
+    /* Reduced motion preference */
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+      }
+    }
+
+    /* High contrast mode assistance */
+    @media (forced-colors: active) {
+      .btn {
+        border: 1px solid ButtonText;
+      }
+      .btn.active {
+        background: Highlight;
+        color: HighlightText;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Skip navigation link for keyboard/screen reader users -->
+  <a href="#editor" class="skip-link">Skip to editor</a>
+
+  <div class="app-root">
+    <!-- Toolbar -->
+    <header class="toolbar" role="toolbar" aria-label="Document toolbar">
+      <div class="toolbar-group">
+        <span class="toolbar-title" id="app-title">Markdown</span>
+        <button class="btn" id="btn-new" title="New Document" aria-label="New document">New</button>
+        <button class="btn" id="btn-open" title="Open Markdown file" aria-label="Open Markdown file">Open</button>
+        <input type="file" id="file-input" accept=".md,.markdown,.txt" style="display: none;" aria-label="Select Markdown file to open" tabindex="-1">
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <button class="btn" id="btn-export-html" title="Export as standalone HTML file" aria-label="Export as HTML file">Export HTML</button>
+        <button class="btn" id="btn-export-md" title="Export raw Markdown file" aria-label="Export as Markdown file">Export MD</button>
+        <button class="btn" id="btn-copy-html" title="Copy rendered HTML to clipboard" aria-label="Copy HTML to clipboard">Copy HTML</button>
+        <button class="btn" id="btn-print" title="Print document or save as PDF" aria-label="Print or save as PDF">Print</button>
+      </div>
+
+      <div class="toolbar-group">
+        <div class="toolbar-group" role="radiogroup" aria-label="View mode">
+          <button class="btn active" id="view-split" title="Split view" role="radio" aria-checked="true" aria-label="Split view: editor and preview side by side">Split</button>
+          <button class="btn" id="view-editor" title="Editor only" role="radio" aria-checked="false" aria-label="Editor only view">Edit</button>
+          <button class="btn" id="view-preview" title="Preview only" role="radio" aria-checked="false" aria-label="Preview only view">View</button>
+        </div>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <button class="btn" id="btn-theme" title="Toggle light/dark theme" aria-label="Toggle theme" aria-pressed="false">Theme</button>
+      </div>
+    </header>
+
+    <!-- Workspace -->
+    <main class="workspace view-split" id="workspace" aria-label="Editor workspace">
+      <div class="editor-pane" role="group" aria-label="Markdown editor">
+        <div class="line-gutter" id="line-gutter" aria-hidden="true">1</div>
+        <textarea class="editor-textarea" id="editor" spellcheck="false" aria-label="Markdown editor - type your Markdown content here" placeholder="Type Markdown here..." aria-multiline="true"></textarea>
+      </div>
+      <section class="preview-pane" id="preview-container" aria-label="HTML preview" tabindex="0">
+        <article class="markdown-body" id="preview" aria-live="polite" aria-atomic="false"></article>
+      </section>
+      <div class="drop-overlay" id="drop-overlay" role="status" aria-live="assertive">Drop Markdown file here</div>
+    </main>
+
+    <!-- Status Bar -->
+    <footer class="status-bar" role="status" aria-label="Document statistics" aria-live="polite" aria-atomic="true">
+      <div class="toolbar-group">
+        <span class="status-item" id="stat-chars">Chars: 0</span>
+        <span class="status-item" id="stat-words">Words: 0</span>
+        <span class="status-item" id="stat-lines">Lines: 1</span>
+        <span class="status-item" id="stat-time">Read: 0 min</span>
+      </div>
+      <div class="toolbar-group">
+        <span id="stat-saved">Saved: Just now</span>
+      </div>
+    </footer>
+  </div>
+
+  <div class="toast" id="toast" role="alert" aria-live="assertive" aria-atomic="true"></div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      // ponytail: in-memory state fallback when localStorage disabled or quota exceeded. upgrade: IndexedDB for heavy documents.
+      var STORAGE_KEYS = {
+        CONTENT: 'md2html:content',
+        SETTINGS: 'md2html:settings'
+      };
+
+      var MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+      var ALLOWED_FILE_TYPES = ['.md', '.markdown', '.txt'];
+
+      var DEFAULT_MARKDOWN = '# Markdown to HTML Converter\n\nWelcome to the client-side **Markdown to HTML Converter**!\n\n## Features\n- **Live Preview:** Real-time GFM parsing with sanitization.\n- **Line Numbers & Indent:** Dynamic line gutter with Tab indent support.\n- **Synchronized Scrolling:** Editor and preview stay in sync.\n- **Exporting:** Download standalone HTML, raw Markdown, or copy HTML to clipboard.\n- **Print & PDF:** Native printing styled for clean page output.\n\n### Code Sample\n```javascript\nfunction greet(name) {\n  return `Hello, ${name}!`;\n}\nconsole.log(greet("World"));\n```\n\n### Task List\n- [x] Fast rendering with marked\n- [x] Security with DOMPurify\n- [x] Autosave to localStorage\n\n### Table Sample\n| Feature | Supported | Notes |\n| :--- | :---: | :--- |\n| GFM Tables | Yes | Fully styled |\n| Task Lists | Yes | Checkboxes enabled |\n| XSS Protection | Yes | DOMPurify sanitization |\n\n> Enjoy writing and previewing your Markdown!\n';
+
+      var DOM = {
+        editor: document.getElementById('editor'),
+        lineGutter: document.getElementById('line-gutter'),
+        preview: document.getElementById('preview'),
+        previewContainer: document.getElementById('preview-container'),
+        workspace: document.getElementById('workspace'),
+        dropOverlay: document.getElementById('drop-overlay'),
+        fileInput: document.getElementById('file-input'),
+        toast: document.getElementById('toast'),
+        btnNew: document.getElementById('btn-new'),
+        btnOpen: document.getElementById('btn-open'),
+        btnExportHtml: document.getElementById('btn-export-html'),
+        btnExportMd: document.getElementById('btn-export-md'),
+        btnCopyHtml: document.getElementById('btn-copy-html'),
+        btnPrint: document.getElementById('btn-print'),
+        btnTheme: document.getElementById('btn-theme'),
+        viewSplit: document.getElementById('view-split'),
+        viewEditor: document.getElementById('view-editor'),
+        viewPreview: document.getElementById('view-preview'),
+        statChars: document.getElementById('stat-chars'),
+        statWords: document.getElementById('stat-words'),
+        statLines: document.getElementById('stat-lines'),
+        statTime: document.getElementById('stat-time'),
+        statSaved: document.getElementById('stat-saved')
+      };
+
+      var state = {
+        theme: 'light',
+        view: 'split',
+        syncScroll: true,
+        lastSaved: Date.now(),
+        isScrollingEditor: false,
+        isScrollingPreview: false
+      };
+
+      // Security Sanitization Policy
+      var purifyConfig = {
+        USE_PROFILES: { html: true },
+        ALLOWED_TAGS: [
+          'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'a', 'b', 'i', 'strong',
+          'em', 'strike', 'code', 'pre', 'hr', 'br', 'ul', 'ol', 'li',
+          'blockquote', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
+          'img', 'span', 'details', 'summary', 'del', 'input'
+        ],
+        ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'class', 'id', 'type', 'checked', 'disabled'],
+        FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form', 'base'],
+        FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick', 'onmouseover'],
+        ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
+      };
+
+      if (window.DOMPurify) {
+        DOMPurify.addHook('afterSanitizeAttributes', function (node) {
+          if (node.tagName === 'A' && node.hasAttribute('href')) {
+            node.setAttribute('target', '_blank');
+            node.setAttribute('rel', 'noopener noreferrer');
+          }
+        });
+      }
+
+      function showToast(message) {
+        DOM.toast.textContent = message;
+        DOM.toast.classList.add('show');
+        setTimeout(function () {
+          DOM.toast.classList.remove('show');
+        }, 2200);
+      }
+
+      function saveSettings() {
+        try {
+          var settings = { theme: state.theme, view: state.view };
+          localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+        } catch (e) {
+          console.warn('Unable to persist settings:', e);
+        }
+      }
+
+      function loadSettings() {
+        try {
+          var raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            if (parsed.theme) applyTheme(parsed.theme);
+            if (parsed.view) applyView(parsed.view);
+          }
+        } catch (e) {
+          console.warn('Unable to load settings:', e);
+        }
+      }
+
+      function applyTheme(theme) {
+        state.theme = theme;
+        document.documentElement.setAttribute('data-theme', theme);
+        DOM.btnTheme.textContent = theme === 'dark' ? 'Light' : 'Dark';
+        DOM.btnTheme.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
+        DOM.btnTheme.setAttribute('aria-label', 'Switch to ' + (theme === 'dark' ? 'light' : 'dark') + ' theme');
+        saveSettings();
+      }
+
+      function applyView(viewMode) {
+        state.view = viewMode;
+        DOM.workspace.classList.remove('view-split', 'view-editor', 'view-preview');
+        DOM.workspace.classList.add('view-' + viewMode);
+
+        DOM.viewSplit.classList.toggle('active', viewMode === 'split');
+        DOM.viewEditor.classList.toggle('active', viewMode === 'editor');
+        DOM.viewPreview.classList.toggle('active', viewMode === 'preview');
+
+        // Update aria-checked for radio group
+        DOM.viewSplit.setAttribute('aria-checked', viewMode === 'split' ? 'true' : 'false');
+        DOM.viewEditor.setAttribute('aria-checked', viewMode === 'editor' ? 'true' : 'false');
+        DOM.viewPreview.setAttribute('aria-checked', viewMode === 'preview' ? 'true' : 'false');
+
+        saveSettings();
+      }
+
+      function updateLineNumbers() {
+        var text = DOM.editor.value;
+        var lineCount = (text.match(/\n/g) || []).length + 1;
+        var linesArr = [];
+        for (var i = 1; i <= lineCount; i++) {
+          linesArr.push(i);
+        }
+        DOM.lineGutter.textContent = linesArr.join('\n');
+      }
+
+      function updateMetrics() {
+        var text = DOM.editor.value;
+        var chars = text.length;
+        var words = text.trim() ? text.trim().split(/\s+/).length : 0;
+        var lines = (text.match(/\n/g) || []).length + 1;
+        var readTime = Math.ceil(words / 200);
+
+        DOM.statChars.textContent = 'Chars: ' + chars;
+        DOM.statWords.textContent = 'Words: ' + words;
+        DOM.statLines.textContent = 'Lines: ' + lines;
+        DOM.statTime.textContent = 'Read: ' + readTime + ' min';
+      }
+
+      function parseMarkdown(md) {
+        if (window.marked && typeof marked.parse === 'function') {
+          return marked.parse(md, { gfm: true, breaks: true });
+        }
+        // ponytail: plain fallback parser when CDN offline. upgrade: bundle local marked.min.js
+        return '<pre>' + md.replace(/[&<>'"]/g, function (c) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c];
+        }) + '</pre>';
+      }
+
+      function sanitizeHtml(html) {
+        // CRITICAL FIX: Fail closed. Block DOM injection if DOMPurify unavailable or library failed to load.
+        if (!window.DOMPurify || typeof DOMPurify.sanitize !== 'function') {
+          console.error('Security: DOMPurify library unavailable or failed to load. Content not rendered.');
+          return '<p style="color: #dc2626; font-weight: 500;">⚠️ Security Error: Content sanitizer unavailable. Please refresh the page and ensure CDN scripts load correctly.</p>';
+        }
+        return DOMPurify.sanitize(html, purifyConfig);
+      }
+
+      function renderPreview() {
+        var rawHtml = parseMarkdown(DOM.editor.value);
+        var cleanHtml = sanitizeHtml(rawHtml);
+        DOM.preview.innerHTML = cleanHtml;
+      }
+
+      var debounceTimer = null;
+      function onEditorInput() {
+        updateLineNumbers();
+        updateMetrics();
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function () {
+          renderPreview();
+        }, 150);
+      }
+
+      function saveContent() {
+        try {
+          localStorage.setItem(STORAGE_KEYS.CONTENT, DOM.editor.value);
+          state.lastSaved = Date.now();
+          var timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          DOM.statSaved.textContent = 'Saved: ' + timeStr;
+        } catch (e) {
+          DOM.statSaved.textContent = 'Autosave failed (Quota)';
+        }
+      }
+
+      function loadContent() {
+        try {
+          var saved = localStorage.getItem(STORAGE_KEYS.CONTENT);
+          if (saved !== null) {
+            DOM.editor.value = saved;
+          } else {
+            DOM.editor.value = DEFAULT_MARKDOWN;
+          }
+        } catch (e) {
+          DOM.editor.value = DEFAULT_MARKDOWN;
+        }
+        updateLineNumbers();
+        updateMetrics();
+        renderPreview();
+      }
+
+      function triggerDownload(blob, filename) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
+      function exportHtml() {
+        var htmlContent = DOM.preview.innerHTML;
+        var titleMatch = DOM.editor.value.match(/^#\s+(.+)$/m);
+        var title = titleMatch ? titleMatch[1].trim() : 'Markdown Export';
+        var standaloneDoc = '<!DOCTYPE html>\n' +
+'<html lang="en">\n' +
+'<head>\n' +
+'  <meta charset="UTF-8">\n' +
+'  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
+'  <title>' + title.replace(/[&<>'"]/g, function (c) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c];
+        }) + '</title>\n' +
+'  <style>\n' +
+'    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; max-width: 860px; margin: 0 auto; padding: 2rem 1.5rem; color: #0f172a; }\n' +
+'    pre, code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; background: #f1f5f9; border-radius: 4px; }\n' +
+'    pre { padding: 1rem; overflow-x: auto; border: 1px solid #e2e8f0; }\n' +
+'    code { padding: 0.2em 0.4em; font-size: 85%; }\n' +
+'    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }\n' +
+'    th, td { border: 1px solid #cbd5e1; padding: 6px 13px; text-align: left; }\n' +
+'    th { background: #f1f5f9; }\n' +
+'    blockquote { border-left: 4px solid #3b82f6; margin: 0; padding: 0.5rem 1rem; background: #f8fafc; color: #475569; }\n' +
+'    img { max-width: 100%; height: auto; }\n' +
+'    hr { height: 2px; background: #e2e8f0; border: 0; margin: 1.5rem 0; }\n' +
+'  </style>\n' +
+'</head>\n' +
+'<body>\n' +
+htmlContent + '\n' +
+'</body>\n' +
+'</html>';
+
+        var blob = new Blob([standaloneDoc], { type: 'text/html;charset=utf-8' });
+        var fileName = (title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'document') + '.html';
+        triggerDownload(blob, fileName);
+        showToast('Exported ' + fileName);
+      }
+
+      function exportMarkdown() {
+        var blob = new Blob([DOM.editor.value], { type: 'text/markdown;charset=utf-8' });
+        triggerDownload(blob, 'document.md');
+        showToast('Exported document.md');
+      }
+
+      function copyHtml() {
+        var htmlContent = DOM.preview.innerHTML;
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(htmlContent).then(function () {
+            showToast('HTML copied to clipboard!');
+          }).catch(function () {
+            showToast('Failed to copy to clipboard');
+          });
+        } else {
+          var ta = document.createElement('textarea');
+          ta.value = htmlContent;
+          ta.setAttribute('aria-hidden', 'true');
+          ta.style.position = 'fixed';
+          ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          try {
+            document.execCommand('copy');
+            showToast('HTML copied to clipboard!');
+          } catch (err) {
+            showToast('Failed to copy to clipboard');
+          }
+          document.body.removeChild(ta);
+        }
+      }
+
+      function handleFileRead(file) {
+        if (!file) return;
+
+        // HIGH FIX: File size validation (5MB limit)
+        if (file.size > MAX_FILE_SIZE) {
+          var sizeMB = (file.size / 1024 / 1024).toFixed(1);
+          showToast('File too large. Max 5MB, got ' + sizeMB + 'MB');
+          return;
+        }
+
+        // MEDIUM FIX: File type validation
+        var fileName = file.name.toLowerCase();
+        var hasValidExt = ALLOWED_FILE_TYPES.some(function (ext) {
+          return fileName.endsWith(ext);
+        });
+        if (!hasValidExt) {
+          showToast('Invalid file type. Accept .md or .txt only');
+          return;
+        }
+
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          DOM.editor.value = e.target.result;
+          onEditorInput();
+          saveContent();
+          showToast('Loaded ' + file.name);
+          DOM.editor.focus();
+        };
+        reader.onerror = function () {
+          showToast('Failed to read file');
+        };
+        reader.readAsText(file);
+      }
+
+      // Synchronized Scrolling
+      function syncEditorToPreview() {
+        if (state.isScrollingPreview) return;
+        state.isScrollingEditor = true;
+
+        DOM.lineGutter.scrollTop = DOM.editor.scrollTop;
+
+        var maxEditorScroll = DOM.editor.scrollHeight - DOM.editor.clientHeight;
+        if (maxEditorScroll > 0) {
+          var ratio = DOM.editor.scrollTop / maxEditorScroll;
+          var maxPreviewScroll = DOM.previewContainer.scrollHeight - DOM.previewContainer.clientHeight;
+          DOM.previewContainer.scrollTop = ratio * maxPreviewScroll;
+        }
+
+        setTimeout(function () {
+          state.isScrollingEditor = false;
+        }, 50);
+      }
+
+      function syncPreviewToEditor() {
+        if (state.isScrollingEditor) return;
+        state.isScrollingPreview = true;
+
+        var maxPreviewScroll = DOM.previewContainer.scrollHeight - DOM.previewContainer.clientHeight;
+        if (maxPreviewScroll > 0) {
+          var ratio = DOM.previewContainer.scrollTop / maxPreviewScroll;
+          var maxEditorScroll = DOM.editor.scrollHeight - DOM.editor.clientHeight;
+          DOM.editor.scrollTop = ratio * maxEditorScroll;
+          DOM.lineGutter.scrollTop = DOM.editor.scrollTop;
+        }
+
+        setTimeout(function () {
+          state.isScrollingPreview = false;
+        }, 50);
+      }
+
+      // Tab key indentation handling
+      function handleTabKey(e) {
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          var start = DOM.editor.selectionStart;
+          var end = DOM.editor.selectionEnd;
+          var val = DOM.editor.value;
+          var indent = '  ';
+
+          DOM.editor.value = val.substring(0, start) + indent + val.substring(end);
+          DOM.editor.selectionStart = DOM.editor.selectionEnd = start + indent.length;
+          onEditorInput();
+        }
+      }
+
+      // Keyboard navigation for view mode radio group
+      function handleViewKeyboard(e) {
+        var viewButtons = [DOM.viewSplit, DOM.viewEditor, DOM.viewPreview];
+        var viewModes = ['split', 'editor', 'preview'];
+        var currentIndex = viewButtons.indexOf(e.target);
+        if (currentIndex === -1) return;
+
+        var nextIndex = -1;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          nextIndex = (currentIndex + 1) % viewButtons.length;
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          nextIndex = (currentIndex - 1 + viewButtons.length) % viewButtons.length;
+        }
+
+        if (nextIndex >= 0) {
+          viewButtons[nextIndex].focus();
+          applyView(viewModes[nextIndex]);
+        }
+      }
+
+      // Bind UI Events
+      DOM.editor.addEventListener('input', onEditorInput);
+      DOM.editor.addEventListener('keydown', handleTabKey);
+      DOM.editor.addEventListener('scroll', syncEditorToPreview);
+      DOM.previewContainer.addEventListener('scroll', syncPreviewToEditor);
+
+      DOM.btnNew.addEventListener('click', function () {
+        if (confirm('Create new document? Unsaved changes will be cleared.')) {
+          DOM.editor.value = '';
+          onEditorInput();
+          saveContent();
+          DOM.editor.focus();
+        }
+      });
+
+      DOM.btnOpen.addEventListener('click', function () {
+        DOM.fileInput.click();
+      });
+
+      DOM.fileInput.addEventListener('change', function (e) {
+        if (e.target.files && e.target.files[0]) {
+          handleFileRead(e.target.files[0]);
+          DOM.fileInput.value = '';
+        }
+      });
+
+      DOM.btnExportHtml.addEventListener('click', exportHtml);
+      DOM.btnExportMd.addEventListener('click', exportMarkdown);
+      DOM.btnCopyHtml.addEventListener('click', copyHtml);
+      DOM.btnPrint.addEventListener('click', function () {
+        window.print();
+      });
+
+      DOM.btnTheme.addEventListener('click', function () {
+        applyTheme(state.theme === 'dark' ? 'light' : 'dark');
+      });
+
+      DOM.viewSplit.addEventListener('click', function () { applyView('split'); });
+      DOM.viewEditor.addEventListener('click', function () { applyView('editor'); });
+      DOM.viewPreview.addEventListener('click', function () { applyView('preview'); });
+
+      // Arrow key navigation within view mode radio group
+      DOM.viewSplit.addEventListener('keydown', handleViewKeyboard);
+      DOM.viewEditor.addEventListener('keydown', handleViewKeyboard);
+      DOM.viewPreview.addEventListener('keydown', handleViewKeyboard);
+
+      // Drag and drop support
+      ['dragenter', 'dragover'].forEach(function (eventName) {
+        window.addEventListener(eventName, function (e) {
+          e.preventDefault();
+          DOM.dropOverlay.classList.add('active');
+        }, false);
+      });
+
+      ['dragleave', 'drop'].forEach(function (eventName) {
+        window.addEventListener(eventName, function (e) {
+          e.preventDefault();
+          if (e.type === 'drop' || (e.clientX <= 0 || e.clientY <= 0)) {
+            DOM.dropOverlay.classList.remove('active');
+          }
+        }, false);
+      });
+
+      window.addEventListener('drop', function (e) {
+        e.preventDefault();
+        DOM.dropOverlay.classList.remove('active');
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+          handleFileRead(e.dataTransfer.files[0]);
+        }
+      });
+
+      // Keyboard shortcut hints
+      document.addEventListener('keydown', function (e) {
+        // Ctrl/Cmd+S: save
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+          e.preventDefault();
+          saveContent();
+          showToast('Document saved');
+        }
+        // Ctrl/Cmd+Shift+C: copy HTML
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'C') {
+          e.preventDefault();
+          copyHtml();
+        }
+      });
+
+      // Periodic autosave every 10 seconds
+      setInterval(saveContent, 10000);
+
+      // Init
+      loadSettings();
+      loadContent();
+    })();
+  </script>
+</body>
+</html>

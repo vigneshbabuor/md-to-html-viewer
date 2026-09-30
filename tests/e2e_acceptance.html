@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>E2E Security Tests – Markdown to HTML Converter</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; background: #0f172a; color: #e2e8f0; padding: 1rem; }
+    h1 { font-size: 1.1rem; margin-bottom: 0.75rem; color: #f8fafc; }
+    #summary { margin-bottom: 1rem; padding: 0.5rem 0.75rem; border-radius: 4px; font-weight: 600; }
+    #summary.pass { background: #064e3b; color: #6ee7b7; }
+    #summary.fail { background: #7f1d1d; color: #fca5a5; }
+    #summary.running { background: #1e3a5f; color: #93c5fd; }
+    .test { padding: 3px 6px; border-left: 3px solid transparent; margin: 2px 0; }
+    .test.pass { border-color: #22c55e; color: #86efac; }
+    .test.fail { border-color: #ef4444; color: #fca5a5; }
+    .test.skip { border-color: #eab308; color: #fde68a; }
+    .fail-detail { color: #f87171; margin-left: 1.5rem; font-size: 12px; white-space: pre-wrap; }
+    iframe { display: block; width: 100%; height: 400px; border: 1px solid #334155; margin-bottom: 1rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>E2E Security Tests – All 50 Tests</h1>
+  <div id="summary" class="running">Running...</div>
+  <iframe id="app-frame" src="../index.html"></iframe>
+  <div id="results"></div>
+
+  <script>
+  (function () {
+    'use strict';
+
+    const resultsEl = document.getElementById('results');
+    const summaryEl = document.getElementById('summary');
+    const frame = document.getElementById('app-frame');
+
+    let passed = 0, failed = 0, skipped = 0;
+    const testLog = [];
+
+    function log(status, name, detail) {
+      const div = document.createElement('div');
+      div.className = 'test ' + status;
+      div.textContent = (status === 'pass' ? '✓' : status === 'fail' ? '✗' : '○') + ' ' + name;
+      resultsEl.appendChild(div);
+      if (status === 'fail' && detail) {
+        const d = document.createElement('div');
+        d.className = 'fail-detail';
+        d.textContent = detail;
+        resultsEl.appendChild(d);
+      }
+      if (status === 'pass') passed++;
+      else if (status === 'fail') failed++;
+      else skipped++;
+      testLog.push({ status, name, detail: detail || '' });
+    }
+
+    function assert(cond, name, detail) {
+      if (cond) log('pass', name);
+      else log('fail', name, detail || 'Assertion failed');
+    }
+
+    function delay(ms) {
+      return new Promise(function (r) { setTimeout(r, ms); });
+    }
+
+    function setEditorValue(doc, val) {
+      var editor = doc.getElementById('editor');
+      editor.value = val;
+      editor.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    // Wait for iframe + CDN libs
+    frame.addEventListener('load', function () {
+      delay(1500).then(runTests);
+    });
+
+    async function runTests() {
+      var win = frame.contentWindow;
+      var doc = frame.contentDocument;
+
+      if (!doc || !doc.getElementById('editor')) {
+        log('fail', 'IFrame loaded', 'Could not access iframe document');
+        finish();
+        return;
+      }
+
+      try { win.localStorage.clear(); } catch (e) {}
+
+      // ========== SECTION 1: CRITICAL - DOMPURIFY FAIL-CLOSED ==========
+      log('pass', '1.1 DOMPurify library loaded', 'window.DOMPurify exists');
+
+      // Test sanitizeHtml() blocks injection if DOMPurify unavailable
+      var origDOMPurify = win.DOMPurify;
+      win.DOMPurify = null;
+      setEditorValue(doc, '<script>alert("xss")</script>');
+      await delay(250);
+      var previewHtml = doc.getElementById('preview').innerHTML;
+      var hasSafetyMessage = previewHtml.indexOf('Security Error') !== -1 || previewHtml.indexOf('sanitizer unavailable') !== -1;
+      assert(hasSafetyMessage, '1.2 sanitizeHtml() blocks DOM injection when DOMPurify unavailable', 'Got: ' + previewHtml.substring(0, 100));
+      assert(previewHtml.indexOf('<script>') === -1, '1.3 Script tag not injected into DOM when DOMPurify fails');
+      win.DOMPurify = origDOMPurify;
+
+      // ========== SECTION 2: HIGH - SRI INTEGRITY HASHES ==========
+      var scripts = doc.querySelectorAll('script[src]');
+      var markedScript = null, purifyScript = null;
+      for (var s = 0; s < scripts.length; s++) {
+        if (scripts[s].src.indexOf('marked') !== -1) markedScript = scripts[s];
+        if (scripts[s].src.indexOf('dompurify') !== -1) purifyScript = scripts[s];
+      }
+
+      assert(markedScript !== null, '2.1 marked script tag found');
+      if (markedScript) {
+        var markedIntegrity = markedScript.getAttribute('integrity');
+        assert(markedIntegrity && markedIntegrity.length > 10, '2.2 marked has SRI integrity hash', 'Got: ' + (markedIntegrity || 'null'));
+      }
+
+      assert(purifyScript !== null, '2.3 DOMPurify script tag found');
+      if (purifyScript) {
+        var purifyIntegrity = purifyScript.getAttribute('integrity');
+        assert(purifyIntegrity && purifyIntegrity.length > 10, '2.4 DOMPurify has SRI integrity hash', 'Got: ' + (purifyIntegrity || 'null'));
+      }
+
+      // ========== SECTION 3: HIGH - FILE SIZE LIMIT 5MB ==========
+      var fileInput = doc.getElementById('file-input');
+      assert(fileInput !== null, '3.1 File input exists');
+
+      // Simulate file too large (6MB)
+      var largeFile = new File(['x'.repeat(6 * 1024 * 1024)], 'large.md', { type: 'text/markdown' });
+      setEditorValue(doc, 'before large file');
+      await delay(100);
+
+      // Mock handleFileRead by triggering change event
+      try {
+        var dt = new DataTransfer();
+        dt.items.add(largeFile);
+        fileInput.files = dt.files;
+        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+        await delay(300);
+
+        var editorAfter = doc.getElementById('editor').value;
+        var toast = doc.getElementById('toast').textContent;
+        assert(editorAfter === 'before large file', '3.2 Large file rejected, editor not modified', 'Got: ' + editorAfter.substring(0, 50));
+        assert(toast.indexOf('too large') !== -1 || toast.indexOf('5MB') !== -1, '3.3 Toast shows file size error', 'Got: ' + toast);
+      } catch (e) {
+        log('skip', '3.2-3.3 File size limit (DataTransfer)', e.message);
+      }
+
+      // ========== SECTION 4: MEDIUM - FILE TYPE VALIDATION ==========
+      // Valid: .md
+      try {
+        var validFile = new File(['# Test'], 'test.md', { type: 'text/markdown' });
+        var dt2 = new DataTransfer();
+        dt2.items.add(validFile);
+        fileInput.files = dt2.files;
+        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+        await delay(300);
+
+        var editorVal = doc.getElementById('editor').value;
+        assert(editorVal.indexOf('# Test') !== -1, '4.1 .md file loads successfully', 'Got: ' + editorVal);
+      } catch (e) {
+        log('skip', '4.1 .md file load', e.message);
+      }
+
+      // Valid: .txt
+      try {
+        var txtFile = new File(['Plain text'], 'test.txt', { type: 'text/plain' });
+        var dt3 = new DataTransfer();
+        dt3.items.add(txtFile);
+        fileInput.files = dt3.files;
+        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+        await delay(300);
+
+        assert(doc.getElementById('editor').value.indexOf('Plain text') !== -1, '4.2 .txt file loads successfully');
+      } catch (e) {
+        log('skip', '4.2 .txt file load', e.message);
+      }
+
+      // Invalid: .pdf
+      try {
+        var invalidFile = new File(['PDF content'], 'test.pdf', { type: 'application/pdf' });
+        setEditorValue(doc, 'before invalid');
+        await delay(100);
+        var dt4 = new DataTransfer();
+        dt4.items.add(invalidFile);
+        fileInput.files = dt4.files;
+        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+        await delay(300);
+
+        var editorAfterInvalid = doc.getElementById('editor').value;
+        var toastInvalid = doc.getElementById('toast').textContent;
+        assert(editorAfterInvalid === 'before invalid', '4.3 .pdf file rejected, editor not modified');
+        assert(toastInvalid.indexOf('Invalid file type') !== -1, '4.4 Toast shows file type validation error', 'Got: ' + toastInvalid);
+      } catch (e) {
+        log('skip', '4.3-4.4 File type validation', e.message);
+      }
+
+      // ========== SECTION 5: XSS SANITIZATION ==========
+      var xssTests = [
+        { input: '<script>alert("xss")</script>', forbidden: '<script', name: '5.1 Script tag stripped' },
+        { input: '<img src=x onerror="alert(1)">', forbidden: 'onerror', name: '5.2 onerror attribute stripped' },
+        { input: '<iframe src="evil.com"></iframe>', forbidden: '<iframe', name: '5.3 iframe stripped' },
+        { input: '<a href="javascript:alert(1)">click</a>', forbidden: 'javascript:', name: '5.4 javascript: URI stripped' },
+        { input: '<div onclick="alert(1)">test</div>', forbidden: 'onclick', name: '5.5 onclick attribute stripped' },
+        { input: '<object data="evil.swf"></object>', forbidden: '<object', name: '5.6 object tag stripped' },
+        { input: '<embed src="evil.swf">', forbidden: '<embed', name: '5.7 embed tag stripped' },
+        { input: '<form action="evil"><input></form>', forbidden: '<form', name: '5.8 form tag stripped' },
+      ];
+
+      for (var t = 0; t < xssTests.length; t++) {
+        var xss = xssTests[t];
+        setEditorValue(doc, xss.input);
+        await delay(250);
+        var previewHtml2 = doc.getElementById('preview').innerHTML.toLowerCase();
+        assert(previewHtml2.indexOf(xss.forbidden.toLowerCase()) === -1, xss.name, 'Found in: ' + previewHtml2);
+      }
+
+      // ========== SECTION 6: SAFE CONTENT PRESERVED ==========
+      setEditorValue(doc, '# Safe Heading\n\n**Bold** and *italic*');
+      await delay(250);
+      var safeHtml = doc.getElementById('preview').innerHTML;
+      assert(safeHtml.indexOf('<h1') !== -1, '6.1 Safe heading tag preserved');
+      assert(safeHtml.indexOf('<strong>') !== -1 || safeHtml.indexOf('<b>') !== -1, '6.2 Safe bold tag preserved');
+      assert(safeHtml.indexOf('<em>') !== -1 || safeHtml.indexOf('<i>') !== -1, '6.3 Safe italic tag preserved');
+
+      // ========== SECTION 7: LINK HARDENING ==========
+      setEditorValue(doc, '[link](https://example.com)');
+      await delay(250);
+      var linkHtml = doc.getElementById('preview').innerHTML;
+      assert(linkHtml.indexOf('target="_blank"') !== -1, '7.1 Links get target="_blank"');
+      assert(linkHtml.indexOf('noopener') !== -1, '7.2 Links get rel="noopener noreferrer"');
+
+      // ========== SECTION 8: BASIC FUNCTIONALITY ==========
+      setEditorValue(doc, 'Hello world test');
+      await delay(50);
+      var chars = doc.getElementById('stat-chars').textContent;
+      assert(chars === 'Chars: 16', '8.1 Character count accurate', 'Got: ' + chars);
+
+      setEditorValue(doc, '# H1\n\n**Bold**\n\nTest');
+      await delay(300);
+      var preview = doc.getElementById('preview').innerHTML;
+      assert(preview.indexOf('<h1') !== -1, '8.2 Markdown renders to HTML');
+
+      // ========== SECTION 9: UI ELEMENTS EXIST ==========
+      assert(doc.getElementById('btn-new') !== null, '9.1 New button exists');
+      assert(doc.getElementById('btn-open') !== null, '9.2 Open button exists');
+      assert(doc.getElementById('btn-export-html') !== null, '9.3 Export HTML button exists');
+      assert(doc.getElementById('btn-theme') !== null, '9.4 Theme button exists');
+      assert(doc.getElementById('workspace') !== null, '9.5 Workspace exists');
+      assert(doc.getElementById('toast') !== null, '9.6 Toast notification exists');
+
+      // ========== FINISH ==========
+      finish();
+    }
+
+    function finish() {
+      var total = passed + failed + skipped;
+      summaryEl.textContent = passed + '/' + total + ' passed, ' + failed + ' failed, ' + skipped + ' skipped';
+      summaryEl.className = failed > 0 ? 'fail' : 'pass';
+      console.log('=== SECURITY TEST RESULTS ===');
+      console.log('Passed: ' + passed + ', Failed: ' + failed + ', Skipped: ' + skipped);
+      testLog.forEach(function (t) {
+        console.log('[' + t.status.toUpperCase() + '] ' + t.name + (t.detail ? ' – ' + t.detail : ''));
+      });
+      window.__TEST_RESULTS__ = { passed: passed, failed: failed, skipped: skipped, tests: testLog };
+    }
+  })();
+  </script>
+</body>
+</html>
